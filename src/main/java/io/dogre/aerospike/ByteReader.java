@@ -120,7 +120,7 @@ public class ByteReader {
         return new Key(namespace, digest, set, userKey);
     }
 
-    public Map<String, Value> readBins(int operationCount) {
+    public Map<String, Value> readBins(int operationCount, boolean skipNull) {
         Map<String, Value> bins = new HashMap<>();
         for (int i = 0; i < operationCount; i++) {
             int length = readInt() - 4;
@@ -132,6 +132,9 @@ public class ByteReader {
 
             String name = readUtf8String(nameLength);
             Value value = Value.get(readParticle(type, valueLength));
+            if (value == null && skipNull) {
+                continue;
+            }
 
             bins.put(name, value);
         }

@@ -3,6 +3,7 @@ package io.dogre.aerospike;
 import com.aerospike.client.Key;
 import com.aerospike.client.ResultCode;
 import com.aerospike.client.Value;
+import com.aerospike.client.Value.NullValue;
 import com.aerospike.client.command.Buffer;
 import com.aerospike.client.command.Command;
 import com.aerospike.client.command.FieldType;
@@ -147,18 +148,52 @@ public class ServiceHandlerImpl implements ServiceHandler {
         } else {
             Header responseHeader = new Header();
             responseHeader.setResultCode(ResultCode.KEY_NOT_FOUND_ERROR);
-            writer.writeHeader(header);
+            writer.writeHeader(responseHeader);
         }
     }
 
     public void handlePut(Header header, ByteReader reader, ByteWriter writer) {
         Key key = reader.readKey(header.getFieldCount());
 
-        Map<String, Value> bins = reader.readBins(header.getOperationCount());
-
-        this.records.put(key, bins);
-
         Header responseHeader = new Header();
+
+        int writeAttribute = header.getInfo2();
+        int infoAttribute = header.getInfo3();
+        boolean recordExists = this.records.containsKey(key);
+
+        int resultCode = ResultCode.OK;
+        if ((writeAttribute & Command.INFO2_CREATE_ONLY) != 0 && recordExists) {
+            resultCode = ResultCode.KEY_EXISTS_ERROR;
+        } else if (((infoAttribute & Command.INFO3_UPDATE_ONLY) != 0 ||
+                (infoAttribute & Command.INFO3_REPLACE_ONLY) != 0) && !recordExists) {
+            resultCode = ResultCode.KEY_NOT_FOUND_ERROR;
+        }
+
+        if (resultCode == ResultCode.OK) {
+            if ((infoAttribute & Command.INFO3_CREATE_OR_REPLACE) != 0) {
+                Map<String, Value> bins = reader.readBins(header.getOperationCount(), true);
+                this.records.put(key, bins);
+            } else {
+                Map<String, Value> src = this.records.get(key);
+                if (src == null) {
+                    src = reader.readBins(header.getOperationCount(), true);
+                } else {
+                    Map<String, Value> bins = reader.readBins(header.getOperationCount(), false);
+                    for (Entry<String, Value> entry : bins.entrySet()) {
+                        String binName = entry.getKey();
+                        Value value = entry.getValue();
+                        if (value == null || value instanceof NullValue) {
+                            src.remove(entry.getKey());
+                        } else {
+                            src.put(binName, value);
+                        }
+                    }
+                }
+                this.records.put(key, src);
+            }
+        }
+
+        header.setResultCode(resultCode);
         writer.writeHeader(responseHeader);
     }
 

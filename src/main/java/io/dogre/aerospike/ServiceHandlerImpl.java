@@ -1,6 +1,7 @@
 package io.dogre.aerospike;
 
 import com.aerospike.client.Key;
+import com.aerospike.client.Operation;
 import com.aerospike.client.ResultCode;
 import com.aerospike.client.Value;
 import com.aerospike.client.Value.NullValue;
@@ -8,11 +9,8 @@ import com.aerospike.client.command.Buffer;
 import com.aerospike.client.command.Command;
 import com.aerospike.client.command.FieldType;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
-import java.util.StringTokenizer;
 
 public class ServiceHandlerImpl implements ServiceHandler {
 
@@ -162,34 +160,25 @@ public class ServiceHandlerImpl implements ServiceHandler {
 
         int writeAttribute = header.getInfo2();
         int infoAttribute = header.getInfo3();
-        boolean recordExists = this.records.containsKey(key);
+        Map<String, Value> src = this.records.get(key);
 
-        int resultCode = ResultCode.OK;
-        if ((writeAttribute & Command.INFO2_CREATE_ONLY) != 0 && recordExists) {
-            resultCode = ResultCode.KEY_EXISTS_ERROR;
-        } else if (((infoAttribute & Command.INFO3_UPDATE_ONLY) != 0 ||
-                (infoAttribute & Command.INFO3_REPLACE_ONLY) != 0) && !recordExists) {
-            resultCode = ResultCode.KEY_NOT_FOUND_ERROR;
-        }
+        List<Operation> operations = reader.readOperations(header.getOperationCount());
+
+        int resultCode = checkResultCode(header, src, operations);
 
         if (resultCode == ResultCode.OK) {
-            if ((infoAttribute & Command.INFO3_CREATE_OR_REPLACE) != 0) {
-                Map<String, Value> bins = reader.readBins(header.getOperationCount(), true);
+            if ((infoAttribute & Command.INFO3_CREATE_OR_REPLACE) != 0 || src == null) {
+                Map<String, Value> bins = new HashMap<>();
+                for (Operation operation : operations) {
+                    bins.put(operation.binName, operation.value);
+                }
                 this.records.put(key, bins);
             } else {
-                Map<String, Value> src = this.records.get(key);
-                if (src == null) {
-                    src = reader.readBins(header.getOperationCount(), true);
-                } else {
-                    Map<String, Value> bins = reader.readBins(header.getOperationCount(), false);
-                    for (Entry<String, Value> entry : bins.entrySet()) {
-                        String binName = entry.getKey();
-                        Value value = entry.getValue();
-                        if (value == null || value instanceof NullValue) {
-                            src.remove(entry.getKey());
-                        } else {
-                            src.put(binName, value);
-                        }
+                for (Operation operation : operations) {
+                    if (operation.value == null || operation.value instanceof NullValue) {
+                        src.remove(operation.binName);
+                    } else {
+                        src.put(operation.binName, operation.value);
                     }
                 }
                 this.records.put(key, src);
@@ -198,6 +187,20 @@ public class ServiceHandlerImpl implements ServiceHandler {
 
         header.setResultCode(resultCode);
         writer.writeHeader(responseHeader);
+    }
+
+    protected static int checkResultCode(Header header, Map<String, Value> src, List<Operation> operations) {
+        int writeAttribute = header.getInfo2();
+        int infoAttribute = header.getInfo3();
+
+        if ((writeAttribute & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
+            return ResultCode.KEY_EXISTS_ERROR;
+        } else if (((infoAttribute & Command.INFO3_UPDATE_ONLY) != 0 ||
+                (infoAttribute & Command.INFO3_REPLACE_ONLY) != 0) && src == null) {
+            return ResultCode.KEY_NOT_FOUND_ERROR;
+        }
+
+        return ResultCode.OK;
     }
 
     public void handleDelete(Header header, ByteReader reader, ByteWriter writer) {

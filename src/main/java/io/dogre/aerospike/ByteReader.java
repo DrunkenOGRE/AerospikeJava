@@ -1,14 +1,13 @@
 package io.dogre.aerospike;
 
 import com.aerospike.client.Key;
+import com.aerospike.client.Operation;
+import com.aerospike.client.Operation.Type;
 import com.aerospike.client.Value;
 import com.aerospike.client.command.Buffer;
 import com.aerospike.client.command.FieldType;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class ByteReader {
 
@@ -92,6 +91,32 @@ public class ByteReader {
         return particle;
     }
 
+    public Operation readOperation() {
+        int length = readInt() - 4;
+        int operationType = readByte();
+        int valueType = readByte();
+        skip(1);
+        int nameLength = readByte();
+        int valueLength = length - nameLength;
+
+        String name = 0 < nameLength ? readUtf8String(nameLength) : null;
+        Value value = 0 < valueLength ? Value.get(readParticle(valueType, valueLength)) : null;
+
+        return new Operation(findOperationType(operationType), name, value);
+    }
+
+    private static final Map<Integer, Type> OPERATION_TYPE_MAP = new HashMap<>();
+
+    static {
+        for (Type type : Type.values()) {
+            OPERATION_TYPE_MAP.put(type.protocolType, type);
+        }
+    }
+
+    public static Type findOperationType(int protocolType) {
+        return OPERATION_TYPE_MAP.get(protocolType);
+    }
+
     public Key readKey(int fieldCount) {
         String namespace = null;
         String set = null;
@@ -120,36 +145,19 @@ public class ByteReader {
         return new Key(namespace, digest, set, userKey);
     }
 
-    public Map<String, Value> readBins(int operationCount, boolean skipNull) {
-        Map<String, Value> bins = new HashMap<>();
+    public List<Operation> readOperations(int operationCount) {
+        List<Operation> operations = new ArrayList<>();
         for (int i = 0; i < operationCount; i++) {
-            int length = readInt() - 4;
-            skip(1);
-            int type = readByte();
-            skip(1);
-            int nameLength = readByte();
-            int valueLength = length - nameLength;
-
-            String name = readUtf8String(nameLength);
-            Value value = Value.get(readParticle(type, valueLength));
-            if (value == null && skipNull) {
-                continue;
-            }
-
-            bins.put(name, value);
+            operations.add(readOperation());
         }
-        return bins;
+        return operations;
     }
 
     public Set<String> readBinNames(int operationCount) {
         Set<String> binNames = new HashSet<>();
-        for (int i = 0; i < operationCount; i++) {
-            int operationSize = readInt() - 4;
-            int operationType = readByte();
-            skip(2);
-            int nameSize = readByte();
-            String binName = readUtf8String(nameSize);
-            binNames.add(binName);
+        List<Operation> operations = readOperations(operationCount);
+        for (Operation operation : operations) {
+            binNames.add(operation.binName);
         }
         return binNames;
     }

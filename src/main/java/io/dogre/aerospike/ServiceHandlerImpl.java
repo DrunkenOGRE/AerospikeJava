@@ -2,12 +2,15 @@ package io.dogre.aerospike;
 
 import com.aerospike.client.Key;
 import com.aerospike.client.Operation;
+import com.aerospike.client.Operation.Type;
 import com.aerospike.client.ResultCode;
 import com.aerospike.client.Value;
+import com.aerospike.client.Value.IntegerValue;
 import com.aerospike.client.Value.NullValue;
 import com.aerospike.client.command.Buffer;
 import com.aerospike.client.command.Command;
 import com.aerospike.client.command.FieldType;
+import com.aerospike.client.command.ParticleType;
 
 import java.util.*;
 import java.util.Map.Entry;
@@ -32,7 +35,8 @@ public class ServiceHandlerImpl implements ServiceHandler {
             if (0 < builder.length()) {
                 builder.append(",");
             }
-            builder.append(namespace).append(":1,//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8=");
+            builder.append(namespace)
+                    .append(":1,//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8=");
         }
         map.put("replicas-all", builder.toString());
         map.put("service", service);
@@ -61,20 +65,11 @@ public class ServiceHandlerImpl implements ServiceHandler {
         } else {
             Header header = reader.readHeader();
             int readAttr = header.getInfo1();
-            if ((readAttr & Command.INFO1_READ) != 0) {
-                if ((readAttr & Command.INFO1_BATCH) != 0) {
-                    handleBatchGet(header, reader, writer);
-                } else {
-                    handleGet(header, reader, writer);
-                }
-            }
             int writeAttr = header.getInfo2();
-            if ((writeAttr & Command.INFO2_WRITE) != 0) {
-                if ((writeAttr & Command.INFO2_DELETE) != 0) {
-                    handleDelete(header, reader, writer);
-                } else {
-                    handlePut(header, reader, writer);
-                }
+            if ((readAttr & Command.INFO1_READ) != 0) {
+                handleRead(header, reader, writer);
+            } else if ((writeAttr & Command.INFO2_WRITE) != 0) {
+                handleWrite(header, reader, writer);
             }
         }
 
@@ -89,6 +84,28 @@ public class ServiceHandlerImpl implements ServiceHandler {
                 writer.writeInfo(key, this.infos.get(key));
             }
         }
+    }
+
+    protected void handleRead(Header header, ByteReader reader, ByteWriter writer) {
+        int readAttr = header.getInfo1();
+        if ((readAttr & Command.INFO1_NOBINDATA) != 0) {
+            handleExists(header, reader, writer);
+        } else if ((readAttr & Command.INFO1_BATCH) != 0) {
+            handleBatchGet(header, reader, writer);
+        } else {
+            handleGet(header, reader, writer);
+        }
+    }
+
+    protected void handleExists(Header header, ByteReader reader, ByteWriter writer) {
+        Key key = reader.readKey(header.getFieldCount());
+
+        Header responseHeader = new Header();
+        if (!this.records.containsKey(key)) {
+            responseHeader.setResultCode(ResultCode.KEY_NOT_FOUND_ERROR);
+        }
+
+        writer.writeHeader(responseHeader);
     }
 
     protected void handleBatchGet(Header header, ByteReader reader, ByteWriter writer) {
@@ -153,57 +170,16 @@ public class ServiceHandlerImpl implements ServiceHandler {
         }
     }
 
-    public void handlePut(Header header, ByteReader reader, ByteWriter writer) {
-        Key key = reader.readKey(header.getFieldCount());
-
-        Header responseHeader = new Header();
-
-        int writeAttribute = header.getInfo2();
-        int infoAttribute = header.getInfo3();
-        Map<String, Value> src = this.records.get(key);
-
-        List<Operation> operations = reader.readOperations(header.getOperationCount());
-
-        int resultCode = checkResultCode(header, src, operations);
-
-        if (resultCode == ResultCode.OK) {
-            if ((infoAttribute & Command.INFO3_CREATE_OR_REPLACE) != 0 || src == null) {
-                Map<String, Value> bins = new HashMap<>();
-                for (Operation operation : operations) {
-                    bins.put(operation.binName, operation.value);
-                }
-                this.records.put(key, bins);
-            } else {
-                for (Operation operation : operations) {
-                    if (operation.value == null || operation.value instanceof NullValue) {
-                        src.remove(operation.binName);
-                    } else {
-                        src.put(operation.binName, operation.value);
-                    }
-                }
-                this.records.put(key, src);
-            }
+    protected void handleWrite(Header header, ByteReader reader, ByteWriter writer) {
+        int writeAttr = header.getInfo2();
+        if ((writeAttr & Command.INFO2_DELETE) != 0) {
+            handleDelete(header, reader, writer);
+        } else {
+            handlePut(header, reader, writer);
         }
-
-        header.setResultCode(resultCode);
-        writer.writeHeader(responseHeader);
     }
 
-    protected static int checkResultCode(Header header, Map<String, Value> src, List<Operation> operations) {
-        int writeAttribute = header.getInfo2();
-        int infoAttribute = header.getInfo3();
-
-        if ((writeAttribute & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
-            return ResultCode.KEY_EXISTS_ERROR;
-        } else if (((infoAttribute & Command.INFO3_UPDATE_ONLY) != 0 ||
-                (infoAttribute & Command.INFO3_REPLACE_ONLY) != 0) && src == null) {
-            return ResultCode.KEY_NOT_FOUND_ERROR;
-        }
-
-        return ResultCode.OK;
-    }
-
-    public void handleDelete(Header header, ByteReader reader, ByteWriter writer) {
+    protected void handleDelete(Header header, ByteReader reader, ByteWriter writer) {
         Key key = reader.readKey(header.getFieldCount());
 
         Header responseHeader = new Header();
@@ -212,6 +188,169 @@ public class ServiceHandlerImpl implements ServiceHandler {
         }
 
         writer.writeHeader(responseHeader);
+    }
+
+    protected void handlePut(Header header, ByteReader reader, ByteWriter writer) {
+        Key key = reader.readKey(header.getFieldCount());
+
+        Map<String, Value> src = this.records.get(key);
+
+        int resultCode = ResultCode.OK;
+
+        List<Operation> operations = reader.readOperations(header.getOperationCount());
+        Type operationType = operations.get(0).type;
+
+        if (operationType == Type.WRITE) {
+            resultCode = handleWrite(header, key, src, operations);
+        } else if (operationType == Type.APPEND) {
+            resultCode = handleAppendPrepend(header, key, src, operations, true);
+        } else if (operationType == Type.PREPEND) {
+            resultCode = handleAppendPrepend(header, key, src, operations, false);
+        } else if (operationType == Type.ADD) {
+            resultCode = handleAdd(header, key, src, operations);
+        } else if (operationType == Type.TOUCH) {
+            resultCode = handleTouch(header, key, src, operations);
+        }
+
+        Header responseHeader = new Header();
+        responseHeader.setResultCode(resultCode);
+        writer.writeHeader(responseHeader);
+    }
+
+    protected int handleWrite(Header header, Key key, Map<String, Value> src, List<Operation> operations) {
+        int writeAttr = header.getInfo2();
+        int infoAttr = header.getInfo3();
+
+        if ((writeAttr & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
+            return ResultCode.KEY_EXISTS_ERROR;
+        } else if (((infoAttr & Command.INFO3_UPDATE_ONLY) != 0 || (infoAttr & Command.INFO3_REPLACE_ONLY) != 0) &&
+                src == null) {
+            return ResultCode.KEY_NOT_FOUND_ERROR;
+        }
+
+        if ((infoAttr & Command.INFO3_CREATE_OR_REPLACE) != 0 || src == null) {
+            Map<String, Value> bins = new HashMap<>();
+            for (Operation operation : operations) {
+                bins.put(operation.binName, operation.value);
+            }
+            this.records.put(key, bins);
+        } else {
+            for (Operation operation : operations) {
+                if (operation.value == null || operation.value instanceof NullValue) {
+                    src.remove(operation.binName);
+                } else {
+                    src.put(operation.binName, operation.value);
+                }
+            }
+            this.records.put(key, src);
+        }
+
+        return ResultCode.OK;
+    }
+
+    protected int handleAppendPrepend(Header header, Key key, Map<String, Value> src, List<Operation> operations,
+            boolean append) {
+        int writeAttr = header.getInfo2();
+        int infoAttr = header.getInfo3();
+
+        if ((writeAttr & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
+            for (Operation operation : operations) {
+                if (src.containsKey(operation.binName)) {
+                    return ResultCode.KEY_EXISTS_ERROR;
+                }
+            }
+        } else if ((infoAttr & Command.INFO3_UPDATE_ONLY) != 0 && src == null) {
+            return ResultCode.KEY_NOT_FOUND_ERROR;
+        } else if ((infoAttr & Command.INFO3_REPLACE_ONLY) != 0) {
+            return ResultCode.PARAMETER_ERROR;
+        }
+        for (Operation operation : operations) {
+            Value value = src.get(operation.binName);
+            if (value != null && value.getType() != ParticleType.STRING && value.getType() != ParticleType.BLOB) {
+                return ResultCode.BIN_TYPE_ERROR;
+            }
+            if (operation.value == null || operation.value.getType() == ParticleType.NULL) {
+                return ResultCode.PARAMETER_ERROR;
+            } else if (operation.value.getType() != ParticleType.STRING) {
+                return ResultCode.BIN_TYPE_ERROR;
+            }
+        }
+
+        if (src == null) {
+            src = new HashMap<>();
+        }
+        for (Operation operation : operations) {
+            Value value = src.get(operation.binName);
+            if (value == null) {
+                value = operation.value;
+            } else {
+                value = Value.get(append ? value.toString() + operation.value.toString() :
+                        operation.value.toString() + value.toString());
+            }
+            src.put(operation.binName, value);
+        }
+        this.records.put(key, src);
+
+        return ResultCode.OK;
+    }
+
+    protected int handleAdd(Header header, Key key, Map<String, Value> src, List<Operation> operations) {
+        int writeAttr = header.getInfo2();
+        int infoAttr = header.getInfo3();
+
+        if ((writeAttr & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
+            for (Operation operation : operations) {
+                if (src.containsKey(operation.binName)) {
+                    return ResultCode.KEY_EXISTS_ERROR;
+                }
+            }
+        } else if ((infoAttr & Command.INFO3_UPDATE_ONLY) != 0 && src == null) {
+            return ResultCode.KEY_NOT_FOUND_ERROR;
+        } else if ((infoAttr & Command.INFO3_REPLACE_ONLY) != 0) {
+            return ResultCode.PARAMETER_ERROR;
+        }
+        for (Operation operation : operations) {
+            Value value = src.get(operation.binName);
+            if (value != null && value.getType() != ParticleType.INTEGER) {
+                return ResultCode.BIN_TYPE_ERROR;
+            }
+            if (operation.value == null || operation.value.getType() == ParticleType.NULL) {
+                return ResultCode.PARAMETER_ERROR;
+            } else if (operation.value.getType() != ParticleType.INTEGER) {
+                return ResultCode.BIN_TYPE_ERROR;
+            }
+        }
+
+        if (src == null) {
+            src = new HashMap<>();
+        }
+        for (Operation operation : operations) {
+            Value value = src.get(operation.binName);
+            if (value == null) {
+                value = operation.value;
+            } else {
+                value = Value.get(value.toLong() + operation.value.toLong());
+            }
+            src.put(operation.binName, value);
+        }
+        this.records.put(key, src);
+
+        return ResultCode.OK;
+    }
+
+    protected int handleTouch(Header header, Key key, Map<String, Value> src, List<Operation> operations) {
+        int writeAttr = header.getInfo2();
+        int infoAttr = header.getInfo3();
+
+        if ((writeAttr & Command.INFO2_CREATE_ONLY) != 0 && src != null) {
+            return ResultCode.KEY_EXISTS_ERROR;
+        } else if ((infoAttr & Command.INFO3_UPDATE_ONLY) != 0 && src == null) {
+            return ResultCode.KEY_NOT_FOUND_ERROR;
+        } else if ((infoAttr & Command.INFO3_REPLACE_ONLY) != 0) {
+            return ResultCode.PARAMETER_ERROR;
+        }
+
+        return ResultCode.OK;
     }
 
 }

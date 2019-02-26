@@ -5,7 +5,6 @@ import com.aerospike.client.Operation;
 import com.aerospike.client.Operation.Type;
 import com.aerospike.client.ResultCode;
 import com.aerospike.client.Value;
-import com.aerospike.client.Value.IntegerValue;
 import com.aerospike.client.Value.NullValue;
 import com.aerospike.client.command.Buffer;
 import com.aerospike.client.command.Command;
@@ -161,7 +160,8 @@ public class ServiceHandlerImpl implements ServiceHandler {
         }
 
         if (this.records.containsKey(key)) {
-            Map<String, Value> bins = this.records.get(key);
+            int readAttr = header.getInfo1();
+            Map<String, Value> bins = (readAttr & Command.INFO1_NOBINDATA) != 0 ? null : this.records.get(key);
             writer.writeRecord(0, key, bins, binNames);
         } else {
             Header responseHeader = new Header();

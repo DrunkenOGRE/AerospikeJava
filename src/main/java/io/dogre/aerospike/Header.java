@@ -133,4 +133,16 @@ public class Header {
         this.operationCount = operationCount;
     }
 
+    public boolean isInfo1Set(int flag) {
+        return (this.info1 & flag) != 0;
+    }
+
+    public boolean isInfo2Set(int flag) {
+        return (this.info2 & flag) != 0;
+    }
+
+    public boolean isInfo3Set(int flag) {
+        return (this.info3 & flag) != 0;
+    }
+
 }

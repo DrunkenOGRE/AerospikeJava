@@ -18,7 +18,7 @@ public class Application {
     @Bean
     public ServiceHandler aerospkieMockServiceHandler(@Value("${aerospike.host}") String host,
             @Value("${aerospike.port}") int port, @Value("${aerospike.namespaces}") String namespaces) {
-        return new ServiceHandlerImpl(host + ":" + port, namespaces.split(","));
+        return new ServiceHandlerImpl2(host + ":" + port, namespaces.split(","));
     }
 
     @Bean

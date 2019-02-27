@@ -1,6 +1,7 @@
 package io.dogre.aerospike;
 
 import com.aerospike.client.Key;
+import com.aerospike.client.Operation;
 import com.aerospike.client.ResultCode;
 import com.aerospike.client.Value;
 import com.aerospike.client.command.Buffer;
@@ -14,10 +15,6 @@ import java.util.Map.Entry;
 import java.util.Set;
 
 public class ByteWriter {
-
-    public static byte[] TAB = new byte[] { '\t' };
-
-    public static byte[] END_OF_LINE = new byte[] { '\n' };
 
     private long messageVersion = 2;
 
@@ -71,6 +68,46 @@ public class ByteWriter {
         bytes[nameLength] = '\t';
         System.arraycopy(info, 0, bytes, nameLength + 1, info.length);
         bytes[length - 1] = '\n';
+
+        writeBytes(bytes);
+    }
+
+    public void writeOperation(Operation operation) {
+        int nameLength = operation.binName != null ? Buffer.estimateSizeUtf8(operation.binName) : 0;
+        int valueLength = operation.value != null ? operation.value.estimateSize() : 0;
+
+        byte[] bytes = new byte[8 + nameLength + valueLength];
+        Buffer.intToBytes(4 + nameLength + valueLength, bytes, 0);
+        bytes[4] = (byte) operation.type.protocolType;
+        bytes[5] = (byte) operation.value.getType();
+        bytes[7] = (byte) nameLength;
+        Buffer.stringToUtf8(operation.binName, bytes, 8);
+        if (operation.value != null) {
+            operation.value.write(bytes, 8 + nameLength);
+        }
+
+        writeBytes(bytes);
+    }
+
+    public void writeKey(Key key) {
+        int namespaceLength = Buffer.estimateSizeUtf8(key.namespace);
+        int digestLength = key.digest.length;
+
+        byte[] bytes = new byte[5 + namespaceLength + 5 + digestLength];
+        int offset = 0;
+        // namespace
+        Buffer.intToBytes(namespaceLength + 1, bytes, offset);
+        offset += 4;
+        bytes[offset] = FieldType.NAMESPACE;
+        offset++;
+        Buffer.stringToUtf8(key.namespace, bytes, offset);
+        offset += namespaceLength;
+        // digest
+        Buffer.intToBytes(digestLength + 1, bytes, offset);
+        offset += 4;
+        bytes[offset] = FieldType.DIGEST_RIPE;
+        offset++;
+        System.arraycopy(key.digest, 0, bytes, offset, digestLength);
 
         writeBytes(bytes);
     }

@@ -14,35 +14,68 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 
+/**
+ * Helper class for writing Aerospike Message.
+ *
+ * @author dogre
+ */
 public class ByteWriter {
 
+    /**
+     * Message version.
+     */
     private long messageVersion = 2;
 
+    /**
+     * Message type.
+     */
     private long messageType;
 
+    /**
+     * current length.
+     */
     private int length;
 
+    /**
+     * list of byte array.
+     */
     private List<byte[]> bytesList;
 
+    /**
+     * Constructor.
+     *
+     * @param messageType message type.
+     */
     public ByteWriter(int messageType) {
         this.messageType = messageType;
         this.length = 0;
         this.bytesList = new ArrayList<>();
     }
 
+    /**
+     * Get current length.
+     *
+     * @return current length.
+     */
     public int getLength() {
         return this.length;
     }
 
-    public List<byte[]> getBytesList() {
-        return this.bytesList;
-    }
-
+    /**
+     * Write byte array, and increase length.
+     *
+     * @param bytes byte array.
+     */
     public void writeBytes(byte[] bytes) {
         this.bytesList.add(bytes);
         this.length += bytes.length;
     }
 
+    /**
+     * Write {@link Header Aerospike Message Header}, and increase length.
+     *
+     * @param header header.
+     */
     public void writeHeader(Header header) {
         byte[] bytes = new byte[Command.MSG_REMAINING_HEADER_SIZE];
         bytes[0] = Command.MSG_REMAINING_HEADER_SIZE;
@@ -59,6 +92,12 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
+    /**
+     * Write info, and increase length.
+     *
+     * @param name the name of info.
+     * @param info the value of info.
+     */
     public void writeInfo(String name, byte[] info) {
         int nameLength = Buffer.estimateSizeUtf8(name);
         int length = nameLength + 1 + info.length + 1;
@@ -72,6 +111,11 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
+    /**
+     * Write {@link Operation}, and increase length.
+     *
+     * @param operation operation.
+     */
     public void writeOperation(Operation operation) {
         int nameLength = operation.binName != null ? Buffer.estimateSizeUtf8(operation.binName) : 0;
         int valueLength = operation.value != null ? operation.value.estimateSize() : 0;
@@ -89,6 +133,11 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
+    /**
+     * Write {@link Key}, and increase length.
+     *
+     * @param key key.
+     */
     public void writeKey(Key key) {
         int namespaceLength = Buffer.estimateSizeUtf8(key.namespace);
         int digestLength = key.digest.length;
@@ -112,6 +161,15 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
+    /**
+     * Estimate the length of record.
+     *
+     * @param key the key of record.
+     * @param bins the bins of record.
+     * @param binNames bin names to be written. if <code>null</code>, write all bins.
+     * @param noBinData flag for exclude bins. if <code>true</code>, write no bins.
+     * @return the length of record.
+     */
     public static int estimateRecord(Key key, Map<String, Value> bins, Set<String> binNames, boolean noBinData) {
         int length = 0;
 
@@ -138,6 +196,15 @@ public class ByteWriter {
         return length;
     }
 
+    /**
+     * Write record, and increase length.
+     *
+     * @param batchIndex batch index.
+     * @param key the key of record.
+     * @param bins the bins of record.
+     * @param binNames bin names to be written. if <code>null</code>, write all bins.
+     * @param noBinData flag for exclude bins. if <code>true</code>, write no bins.
+     */
     public void writeRecord(int batchIndex, Key key, Map<String, Value> bins, Set<String> binNames, boolean noBinData) {
         Header header = new Header();
         header.setTtl(batchIndex);
@@ -204,6 +271,14 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
+    /**
+     * Concatenate the byte arrays in {@link #bytesList}.
+     * <p>
+     * It just not only concatenate the byte arrays, but also prepend size header at front of byte array. So, the length
+     * of response is 8 + length.
+     *
+     * @return byte array.
+     */
     public byte[] toBytes() {
         byte[] bytes = new byte[8 + this.length];
         int offset = 0;

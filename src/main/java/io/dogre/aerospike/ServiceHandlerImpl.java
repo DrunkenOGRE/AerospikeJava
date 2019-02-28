@@ -13,12 +13,29 @@ import com.aerospike.client.command.ParticleType;
 import java.util.*;
 import java.util.Map.Entry;
 
+/**
+ * Implementation of {@link ServiceHandler}.
+ *
+ * @author dogre
+ */
 public class ServiceHandlerImpl implements ServiceHandler {
 
+    /**
+     * The information of server.
+     */
     protected Map<String, byte[]> infos = new HashMap<>();
 
+    /**
+     * Records.
+     */
     protected Map<Key, Map<String, Value>> records = new HashMap<>();
 
+    /**
+     * Constructor.
+     *
+     * @param service the string for connecting this server. <code>host + ":" + port</code>
+     * @param namespaces the names of namespace that Aerospike Server has.
+     */
     public ServiceHandlerImpl(String service, String... namespaces) {
         Map<String, String> map = new HashMap<>();
         map.put("node", "BB9E152A39B2100");
@@ -28,13 +45,13 @@ public class ServiceHandlerImpl implements ServiceHandler {
         map.put("service-clear-std", service);
         map.put("peers-generation", "1");
         map.put("peers-clear-std", "1,,[]");
+        // make namespaces to nodes map
         StringBuilder builder = new StringBuilder();
         for (String namespace : namespaces) {
             if (0 < builder.length()) {
                 builder.append(",");
             }
-            builder.append(namespace)
-                    .append(":1,//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8=");
+            builder.append(namespace).append(":1,//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8=");
         }
         map.put("replicas-all", builder.toString());
         map.put("service", service);
@@ -54,7 +71,6 @@ public class ServiceHandlerImpl implements ServiceHandler {
 
         long sizeHeader = reader.readLong();
         int type = (int) (sizeHeader >> 48) & 0xff;
-        // long length = sizeHeader & 0xffffffffffffL;
 
         ByteWriter writer = new ByteWriter(type);
 
@@ -62,7 +78,7 @@ public class ServiceHandlerImpl implements ServiceHandler {
             handleInfo(reader, writer);
         } else {
             Header header = reader.readHeader();
-            int readAttr = header.getInfo1();
+            // If batch get, the structure of remaining message is different.
             if (header.isInfo1Set(Command.INFO1_READ) && header.isInfo1Set(Command.INFO1_BATCH)) {
                 handleBatchGet(header, reader, writer);
             } else {
@@ -73,7 +89,15 @@ public class ServiceHandlerImpl implements ServiceHandler {
         return writer.toBytes();
     }
 
+    /**
+     * Handle info message.
+     *
+     * @param reader byte reader.
+     * @param writer byte write.
+     */
     protected void handleInfo(ByteReader reader, ByteWriter writer) {
+        // Info message request consists of the name of infos, seperated by new line('\n').
+        // And response consists of the name and value of infos. A info is the name + tab('\n') + value + new line('\n').
         StringTokenizer tokenizer = new StringTokenizer(reader.readUtf8String(reader.getLength() - 8), "\n");
         while (tokenizer.hasMoreTokens()) {
             String key = tokenizer.nextToken();
@@ -83,6 +107,13 @@ public class ServiceHandlerImpl implements ServiceHandler {
         }
     }
 
+    /**
+     * Handle batch get.
+     *
+     * @param header header.
+     * @param reader byte reader.
+     * @param writer byte writer.
+     */
     protected void handleBatchGet(Header header, ByteReader reader, ByteWriter writer) {
         reader.skip(4); // field size
         int fieldType = reader.readByte();
@@ -129,6 +160,13 @@ public class ServiceHandlerImpl implements ServiceHandler {
 
     protected static final Operation GET_ALL_OPERATION = Operation.get();
 
+    /**
+     * Handle operations.
+     *
+     * @param header header.
+     * @param reader byte reader.
+     * @param writer byte writer.
+     */
     protected void handleOperations(Header header, ByteReader reader, ByteWriter writer) {
         Key key = reader.readKey(header.getFieldCount());
         Map<String, Value> current = this.records.get(key);
@@ -138,11 +176,13 @@ public class ServiceHandlerImpl implements ServiceHandler {
         boolean hasRead = header.isInfo1Set(Command.INFO1_READ);
         boolean hasWrite = header.isInfo2Set(Command.INFO2_WRITE);
         boolean createOnly = hasWrite && header.isInfo2Set(Command.INFO2_CREATE_ONLY);
-        boolean mustRecordExists = hasWrite &&
-                (header.isInfo3Set(Command.INFO3_UPDATE_ONLY) || header.isInfo3Set(Command.INFO3_REPLACE_ONLY));
-        boolean replace = hasWrite &&
-                (header.isInfo3Set(Command.INFO3_CREATE_OR_REPLACE) || header.isInfo3Set(Command.INFO3_REPLACE_ONLY));
+        boolean mustRecordExists = hasWrite && (header.isInfo3Set(Command.INFO3_UPDATE_ONLY) || header.isInfo3Set(Command.INFO3_REPLACE_ONLY));
+        boolean replace = hasWrite && (header.isInfo3Set(Command.INFO3_CREATE_OR_REPLACE) || header.isInfo3Set(Command.INFO3_REPLACE_ONLY));
         boolean noBinData = header.isInfo1Set(Command.INFO1_NOBINDATA);
+        // 'Get Header' message and 'Exists' message are very similar.
+        // 'Exists' message consists of Header and Key.
+        // But 'Get Header' message consists of Header and Key and additionally empty 8 bytes.
+        // 'Get Header' response contains Key, But 'Exists' does not.
         boolean writeKey = hasRead && (!noBinData || 0 < remainds);
 
         int resultCode = ResultCode.OK;
@@ -224,8 +264,7 @@ public class ServiceHandlerImpl implements ServiceHandler {
                                     opType != ParticleType.INTEGER) {
                                 resultCode = ResultCode.BIN_TYPE_ERROR;
                             } else {
-                                next.put(binName,
-                                        value == null ? opValue : Value.get(value.toLong() + opValue.toLong()));
+                                next.put(binName, value == null ? opValue : Value.get(value.toLong() + opValue.toLong()));
                             }
                         }
                         break;

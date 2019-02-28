@@ -27,11 +27,11 @@ public class CommandTest {
 
     private static void runAerospikeServer(String host, int port, String... namespaces) {
         ServiceHandler serviceHandler = new ServiceHandlerImpl(host + ":" + port, namespaces);
-        Server server = new NettyServer(port, 1, 10, serviceHandler);
+        AerospikeServer server = new NettyAerospikeServer(1, 10);
         thread = new Thread() {
             @Override
             public void run() {
-                server.start();
+                server.start(host, port, namespaces);
             }
         };
         thread.start();

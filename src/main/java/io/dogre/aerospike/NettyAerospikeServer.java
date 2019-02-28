@@ -12,31 +12,54 @@ import io.netty.handler.logging.LoggingHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class NettyServer implements Server {
+/**
+ * Implementation of {@link AerospikeServer} based on Netty.
+ *
+ * @author dogre
+ */
+public class NettyAerospikeServer implements AerospikeServer {
 
-    private int port;
+    private static final Logger logger = LoggerFactory.getLogger(NettyAerospikeServer.class);
 
+    /**
+     * The number of IO threads.
+     */
     private int ioThreads;
 
+    /**
+     * The number of Worker threads.
+     */
     private int workerThreads;
 
-    private ServiceHandler serviceHandler;
-
+    /**
+     * Whether stared.
+     */
     private boolean started;
 
-    public NettyServer(int port, int ioThreads, int workerThreads, ServiceHandler serviceHandler) {
-        this.port = port;
+    /**
+     * Constructor.
+     *
+     * @param ioThreads The number of IO threads.
+     * @param workerThreads The number of Worker threads.
+     */
+    public NettyAerospikeServer(int ioThreads, int workerThreads) {
         this.ioThreads = ioThreads;
         this.workerThreads = workerThreads;
-        this.serviceHandler = serviceHandler;
         this.started = false;
     }
 
     @Override
-    public void start() {
+    public void start(String host, int port, String[] namespaces) {
+        logger.info("Starting server : host = {}, port = {}, namespaces = {}, " +
+                        "# of io threads = {}, # of worker threads = {}", host, port, namespaces, this.ioThreads,
+                this.workerThreads);
+
+        // create ServiceHandler
+        ServiceHandler serviceHandler = new ServiceHandlerImpl(host + ":" + port, namespaces);
+
         EventLoopGroup ioGroup = new NioEventLoopGroup(this.ioThreads);
         EventLoopGroup workerGroup = new NioEventLoopGroup(this.workerThreads);
-        ChannelHandler channelHandler = new AerospikeServiceChannelHandler(this.serviceHandler);
+        ChannelHandler channelHandler = new AerospikeServiceChannelHandler(serviceHandler);
         try {
             ServerBootstrap bootstrap = new ServerBootstrap();
             bootstrap.group(ioGroup, workerGroup).channel(NioServerSocketChannel.class)
@@ -50,8 +73,9 @@ public class NettyServer implements Server {
                         }
                     });
 
-            ChannelFuture channelFuture = bootstrap.bind(this.port).sync();
+            ChannelFuture channelFuture = bootstrap.bind(port).sync();
             this.started = channelFuture.isSuccess();
+            logger.info("Server started");
             channelFuture.channel().closeFuture().sync();
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -87,30 +111,28 @@ public class NettyServer implements Server {
         }
 
         @Override
-        public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
-            if (this.buffer != null) {
-                this.buffer.release();
-                this.buffer = null;
-            }
-        }
-
-        @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             ByteBuf byteBuf = (ByteBuf) msg;
             this.buffer.writeBytes(byteBuf);
             byteBuf.release();
 
-            long sizeHeader = this.buffer.getLong(this.buffer.readerIndex());
-            int length = (int) (sizeHeader & 0xffffffffffffL);
-            if (length <= this.buffer.readableBytes()) {
-                byte[] request = new byte[8 + length];
-                this.buffer.readBytes(request);
+            // The first 8 bytes of Aerospike Message contains the infomation of message size.
+            // The first byte is the version of message protocol.
+            // The second byte is the type of message, 1 means 'info', 3 means 'command'.
+            // The rest 6 bytes is the length of message.
+            if (8 <= this.buffer.readableBytes()) {
+                long sizeHeader = this.buffer.getLong(this.buffer.readerIndex());
+                int length = (int) (sizeHeader & 0xffffffffffffL);
+                if (8 + length <= this.buffer.readableBytes()) {
+                    byte[] request = new byte[8 + length];
+                    this.buffer.readBytes(request);
 
-                byte[] response = this.serviceHandler.handleRequest(request);
-                ByteBuf responseByteBuf = ByteBufAllocator.DEFAULT.buffer(response.length);
-                responseByteBuf.writeBytes(response);
+                    byte[] response = this.serviceHandler.handleRequest(request);
+                    ByteBuf responseByteBuf = ByteBufAllocator.DEFAULT.buffer(response.length);
+                    responseByteBuf.writeBytes(response);
 
-                ctx.writeAndFlush(responseByteBuf);
+                    ctx.writeAndFlush(responseByteBuf);
+                }
             }
         }
 

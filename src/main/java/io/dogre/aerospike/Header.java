@@ -2,28 +2,133 @@ package io.dogre.aerospike;
 
 import com.aerospike.client.command.Command;
 
+/**
+ * Aerospike Message Header.
+ * <p>
+ * <table>
+ * <thead>
+ * <tr>
+ * <th>Offset</th>
+ * <th>Size</th>
+ * <th>Description</th>
+ * </tr>
+ * </thead>
+ * <tbody>
+ * <tr>
+ * <td>0</td>
+ * <td>1</td>
+ * <td>The length of Header, fixed to 22.</td>
+ * </tr>
+ * <tr>
+ * <td>1</td>
+ * <td>1</td>
+ * <td>Info1, read attribute</td>
+ * </tr>
+ * <tr>
+ * <td>2</td>
+ * <td>1</td>
+ * <td>Info2, write attribute</td>
+ * </tr>
+ * <tr>
+ * <td>3</td>
+ * <td>1</td>
+ * <td>Info3, info attribute</td>
+ * </tr>
+ * <tr>
+ * <td>4</td>
+ * <td>1</td>
+ * <td>unused</td>
+ * </tr>
+ * <tr>
+ * <td>5</td>
+ * <td>1</td>
+ * <td>Result Code</td>
+ * </tr>
+ * <tr>
+ * <td>6</td>
+ * <td>4</td>
+ * <td>Generation</td>
+ * </tr>
+ * <tr>
+ * <td>10</td>
+ * <td>4</td>
+ * <td>Expiration</td>
+ * </tr>
+ * <tr>
+ * <td>14</td>
+ * <td>4</td>
+ * <td>TTL. If batch get, batch index</td>
+ * </tr>
+ * <tr>
+ * <td>18</td>
+ * <td>2</td>
+ * <td>field count</td>
+ * </tr>
+ * <tr>
+ * <td>20</td>
+ * <td>2</td>
+ * <td>operation count</td>
+ * </tr>
+ * </tbody>
+ * </table>
+ *
+ * @author dogre
+ */
 public class Header {
 
+    /**
+     * The length of Header, fixed to 22.
+     */
     private int length;
 
-    private int info1; // read attribute
+    /**
+     * Info1, read attribute.
+     */
+    private int info1;
 
-    private int info2; // write attribute
+    /**
+     * Info2, write attribute.
+     */
+    private int info2;
 
-    private int info3; // info attribute
+    /**
+     * Info3, info attribute.
+     */
+    private int info3;
 
+    /**
+     * unused
+     */
     private int unused;
 
+    /**
+     * Result Code.
+     */
     private int resultCode;
 
+    /**
+     * Generation.
+     */
     private int generation;
 
+    /**
+     * Expiration.
+     */
     private int expiration;
 
-    private int ttl; // batch index
+    /**
+     * TTL. If batch get, batch index.
+     */
+    private int ttl;
 
+    /**
+     * Field count.
+     */
     private int fieldCount;
 
+    /**
+     * Operation count.
+     */
     private int operationCount;
 
     public Header() {
@@ -133,14 +238,32 @@ public class Header {
         this.operationCount = operationCount;
     }
 
+    /**
+     * Whether info1 flag is set.
+     *
+     * @param flag info1 flag.
+     * @return <code>true</code> if flag is set, otherwise <code>false</code>.
+     */
     public boolean isInfo1Set(int flag) {
         return (this.info1 & flag) != 0;
     }
 
+    /**
+     * Whether info2 flag is set.
+     *
+     * @param flag info2 flag.
+     * @return <code>true</code> if flag is set, otherwise <code>false</code>.
+     */
     public boolean isInfo2Set(int flag) {
         return (this.info2 & flag) != 0;
     }
 
+    /**
+     * Whether info3 flag is set.
+     *
+     * @param flag info3 flag.
+     * @return <code>true</code> if flag is set, otherwise <code>false</code>.
+     */
     public boolean isInfo3Set(int flag) {
         return (this.info3 & flag) != 0;
     }

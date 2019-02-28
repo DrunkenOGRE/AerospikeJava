@@ -26,7 +26,6 @@ public class Application {
             @Value("${aerospike.io-threads}") int ioThreads, @Value("${aerospike.worker-threads}") int workerThread,
             ServiceHandler serviceHandler) {
         return new NettyServer(port, ioThreads, workerThread, serviceHandler);
-        //        return new SocketServer(port, serviceHandler);
     }
 
 }

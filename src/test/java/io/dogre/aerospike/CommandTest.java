@@ -5,7 +5,9 @@ import com.aerospike.client.policy.BatchPolicy;
 import com.aerospike.client.policy.Policy;
 import com.aerospike.client.policy.RecordExistsAction;
 import com.aerospike.client.policy.WritePolicy;
-import org.junit.*;
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.junit.Test;
 
 import java.util.List;
 
@@ -36,10 +38,10 @@ public class CommandTest {
         namespace = "test";
         set = "test";
 
-        //        host = "recoome.cns.widerlab.io";
-        //        port = 3000;
-        //        namespace = "viewer";
-        //        set = "COOKIE";
+        //                host = "recoome.cns.widerlab.io";
+        //                port = 3000;
+        //                namespace = "viewer";
+        //                set = "COOKIE";
 
         client = new AerospikeClient(host, port);
         key = new Key(namespace, set, "test");
@@ -56,25 +58,12 @@ public class CommandTest {
         client.close();
     }
 
-    @Before
-    public void setUp() {
-        client.delete(null, key);
-        for (Key key : keys) {
-            client.delete(null, key);
-        }
-    }
-
-    @After
-    public void tearDown() {
-        client.delete(null, key);
-        for (Key key : keys) {
-            client.delete(null, key);
-        }
-    }
-
     @Test
     public void testPut() throws InterruptedException {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // replace record not existing
         policy.recordExistsAction = RecordExistsAction.REPLACE_ONLY;
@@ -110,11 +99,17 @@ public class CommandTest {
         record = client.get(null, key);
         assertThat(record.getString("name")).isEqualTo("test2");
         assertThat(record.bins.containsKey("age")).isFalse();
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testAppend() throws InterruptedException {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // create new record
         policy.recordExistsAction = RecordExistsAction.UPDATE;
@@ -163,11 +158,17 @@ public class CommandTest {
         });
         assertThat(thrown).isInstanceOf(AerospikeException.class)
                 .hasFieldOrPropertyWithValue("resultCode", ResultCode.PARAMETER_ERROR);
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testPrepend() throws InterruptedException {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // create new record
         policy.recordExistsAction = RecordExistsAction.UPDATE;
@@ -216,11 +217,17 @@ public class CommandTest {
         });
         assertThat(thrown).isInstanceOf(AerospikeException.class)
                 .hasFieldOrPropertyWithValue("resultCode", ResultCode.PARAMETER_ERROR);
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testAdd() throws InterruptedException {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // create new record
         policy.recordExistsAction = RecordExistsAction.UPDATE;
@@ -269,11 +276,17 @@ public class CommandTest {
         });
         assertThat(thrown).isInstanceOf(AerospikeException.class)
                 .hasFieldOrPropertyWithValue("resultCode", ResultCode.PARAMETER_ERROR);
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testDelete() {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // init : create new record
         policy.recordExistsAction = RecordExistsAction.UPDATE;
@@ -286,11 +299,17 @@ public class CommandTest {
         client.delete(policy, key);
         record = client.get(null, key);
         assertThat(record).isNull();
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testTouch() {
         WritePolicy policy = new WritePolicy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // touch record not existing
         policy.recordExistsAction = RecordExistsAction.CREATE_ONLY;
@@ -347,11 +366,17 @@ public class CommandTest {
         });
         assertThat(thrown).isInstanceOf(AerospikeException.class)
                 .hasFieldOrPropertyWithValue("resultCode", ResultCode.PARAMETER_ERROR);
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testExists() {
         Policy policy = new Policy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // check not existing
         assertThat(client.exists(policy, key)).isFalse();
@@ -359,11 +384,17 @@ public class CommandTest {
         // check existing
         client.put(null, key, new Bin("name", "test"));
         assertThat(client.exists(policy, key)).isTrue();
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testGet() {
         Policy policy = new Policy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // get not existing
         Record record = client.get(null, key);
@@ -382,11 +413,17 @@ public class CommandTest {
         record = client.get(null, key, "name");
         assertThat(record.getString("name")).isEqualTo("test");
         assertThat(record.bins).hasSize(1);
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testGetHeader() {
         Policy policy = new Policy();
+
+        // initialize : delete record
+        client.delete(null, key);
 
         // get not existing
         Record record = client.getHeader(null, key);
@@ -398,11 +435,19 @@ public class CommandTest {
         // test get header
         record = client.getHeader(null, key);
         assertThat(record.bins).isNull();
+
+        // finalize : delete record
+        client.delete(null, key);
     }
 
     @Test
     public void testBatchGet() {
         BatchPolicy policy = new BatchPolicy();
+
+        // initialize : delete records
+        for (Key key : keys) {
+            client.delete(null, key);
+        }
 
         // batch get not existing
         Record[] records = client.get(policy, keys);
@@ -440,11 +485,21 @@ public class CommandTest {
                 assertThat(records[i]).isNull();
             }
         }
+
+        // finalize : delete records
+        for (Key key : keys) {
+            client.delete(null, key);
+        }
     }
 
     @Test
     public void testBatchGetHeader() {
         BatchPolicy policy = new BatchPolicy();
+
+        // initialize : delete records
+        for (Key key : keys) {
+            client.delete(null, key);
+        }
 
         // batch get header not existing
         Record[] records = client.get(policy, keys);
@@ -468,11 +523,19 @@ public class CommandTest {
                 assertThat(records[i]).isNull();
             }
         }
+
+        // finalize : delete records
+        for (Key key : keys) {
+            client.delete(null, key);
+        }
     }
 
     @Test
     public void testOperate() {
         WritePolicy policy = new WritePolicy();
+
+        // finalize : delete record
+        client.delete(null, key);
 
         // get not existing
         Record record = client.operate(policy, key, Operation.get("name"), Operation.get("age"));
@@ -549,11 +612,9 @@ public class CommandTest {
         });
         assertThat(thrown).isInstanceOf(AerospikeException.class)
                 .hasFieldOrPropertyWithValue("resultCode", ResultCode.PARAMETER_ERROR);
-    }
 
-    @Test
-    public void test() {
-        System.out.println("");
+        // finalize : delete record
+        client.delete(null, key);
     }
 
 }

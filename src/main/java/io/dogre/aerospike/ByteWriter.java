@@ -112,7 +112,7 @@ public class ByteWriter {
         writeBytes(bytes);
     }
 
-    public static int estimateRecord(Key key, Map<String, Value> bins, Set<String> binNames) {
+    public static int estimateRecord(Key key, Map<String, Value> bins, Set<String> binNames, boolean noBinData) {
         int length = 0;
 
         // fields
@@ -120,7 +120,7 @@ public class ByteWriter {
         int digestLength = key.digest.length;
         length += 5 + namespaceLength + 5 + digestLength;
 
-        if (bins != null) {
+        if (bins != null && !noBinData) {
             // operations
             for (Entry<String, Value> entry : bins.entrySet()) {
                 String name = entry.getKey();
@@ -138,12 +138,12 @@ public class ByteWriter {
         return length;
     }
 
-    public void writeRecord(int batchIndex, Key key, Map<String, Value> bins, Set<String> binNames) {
+    public void writeRecord(int batchIndex, Key key, Map<String, Value> bins, Set<String> binNames, boolean noBinData) {
         Header header = new Header();
         header.setTtl(batchIndex);
         header.setFieldCount(2);
 
-        int length = estimateRecord(key, bins, binNames);
+        int length = estimateRecord(key, bins, binNames, noBinData);
 
         byte[] bytes = new byte[length];
 
@@ -166,33 +166,35 @@ public class ByteWriter {
         offset += digestLength;
 
         if (bins != null) {
-            // operations
-            int operationCount = 0;
-            for (Entry<String, Value> entry : bins.entrySet()) {
-                String name = entry.getKey();
-                if (binNames != null && !binNames.contains(name)) {
-                    continue;
+            if (!noBinData) {
+                // operations
+                int operationCount = 0;
+                for (Entry<String, Value> entry : bins.entrySet()) {
+                    String name = entry.getKey();
+                    if (binNames != null && !binNames.contains(name)) {
+                        continue;
+                    }
+                    Value value = entry.getValue();
+
+                    int nameLength = Buffer.stringToUtf8(name, bytes, offset + 8);
+                    int valueLength = value.write(bytes, offset + 8 + nameLength);
+
+                    Buffer.intToBytes(4 + nameLength + valueLength, bytes, offset);
+                    offset += 4;
+                    bytes[offset] = 1;
+                    offset++;
+                    bytes[offset] = (byte) value.getType();
+                    offset += 2;
+                    bytes[offset] = (byte) nameLength;
+                    offset++;
+                    offset += nameLength + valueLength;
+
+                    operationCount++;
                 }
-                Value value = entry.getValue();
 
-                int nameLength = Buffer.stringToUtf8(name, bytes, offset + 8);
-                int valueLength = value.write(bytes, offset + 8 + nameLength);
-
-                Buffer.intToBytes(4 + nameLength + valueLength, bytes, offset);
-                offset += 4;
-                bytes[offset] = 1;
-                offset++;
-                bytes[offset] = (byte) value.getType();
-                offset += 2;
-                bytes[offset] = (byte) nameLength;
-                offset++;
-                offset += nameLength + valueLength;
-
-                operationCount++;
+                // operation count
+                header.setOperationCount(operationCount);
             }
-
-            // operation count
-            header.setOperationCount(operationCount);
         } else {
             // result code
             header.setResultCode(ResultCode.KEY_NOT_FOUND_ERROR);

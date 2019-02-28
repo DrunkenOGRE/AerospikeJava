@@ -18,7 +18,7 @@ public class Application {
     @Bean
     public ServiceHandler aerospkieMockServiceHandler(@Value("${aerospike.host}") String host,
             @Value("${aerospike.port}") int port, @Value("${aerospike.namespaces}") String namespaces) {
-        return new ServiceHandlerImpl2(host + ":" + port, namespaces.split(","));
+        return new ServiceHandlerImpl(host + ":" + port, namespaces.split(","));
     }
 
     @Bean
@@ -26,6 +26,7 @@ public class Application {
             @Value("${aerospike.io-threads}") int ioThreads, @Value("${aerospike.worker-threads}") int workerThread,
             ServiceHandler serviceHandler) {
         return new NettyServer(port, ioThreads, workerThread, serviceHandler);
+        //        return new SocketServer(port, serviceHandler);
     }
 
 }

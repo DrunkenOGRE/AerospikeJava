@@ -24,6 +24,10 @@ public class ByteReader {
         return this.bytes.length;
     }
 
+    public int getOffset() {
+        return this.offset;
+    }
+
     public void skip(int length) {
         this.offset += length;
     }
@@ -108,7 +112,7 @@ public class ByteReader {
     private static final Map<Integer, Type> OPERATION_TYPE_MAP = new HashMap<>();
 
     static {
-        for (Type type : Type.values()) {
+        for (Type type : new Type[] { Type.READ, Type.WRITE, Type.ADD, Type.APPEND, Type.PREPEND, Type.TOUCH }) {
             OPERATION_TYPE_MAP.put(type.protocolType, type);
         }
     }

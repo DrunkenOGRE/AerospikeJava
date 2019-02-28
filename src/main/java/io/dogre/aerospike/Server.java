@@ -4,4 +4,6 @@ public interface Server {
 
     void start();
 
+    boolean isStarted();
+
 }

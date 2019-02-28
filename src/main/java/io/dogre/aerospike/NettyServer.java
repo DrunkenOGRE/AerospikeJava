@@ -22,11 +22,14 @@ public class NettyServer implements Server {
 
     private ServiceHandler serviceHandler;
 
+    private boolean started;
+
     public NettyServer(int port, int ioThreads, int workerThreads, ServiceHandler serviceHandler) {
         this.port = port;
         this.ioThreads = ioThreads;
         this.workerThreads = workerThreads;
         this.serviceHandler = serviceHandler;
+        this.started = false;
     }
 
     @Override
@@ -48,6 +51,7 @@ public class NettyServer implements Server {
                     });
 
             ChannelFuture channelFuture = bootstrap.bind(this.port).sync();
+            this.started = channelFuture.isSuccess();
             channelFuture.channel().closeFuture().sync();
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -55,6 +59,11 @@ public class NettyServer implements Server {
             ioGroup.shutdownGracefully();
             workerGroup.shutdownGracefully();
         }
+    }
+
+    @Override
+    public boolean isStarted() {
+        return this.started;
     }
 
     @ChannelHandler.Sharable

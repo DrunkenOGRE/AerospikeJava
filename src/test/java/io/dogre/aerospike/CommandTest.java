@@ -18,30 +18,45 @@ public class CommandTest {
 
     private static IAerospikeClient client;
 
-    private static String host;
-
-    private static int port;
-
-    private static String namespace;
-
-    private static String set;
-
     private static Key key;
 
     private static String[] userKeys;
     private static Key[] keys;
 
+    private static Thread thread;
+
+    private static void runAerospikeServer(String host, int port, String... namespaces) {
+        ServiceHandler serviceHandler = new ServiceHandlerImpl(host + ":" + port, namespaces);
+        Server server = new NettyServer(port, 1, 10, serviceHandler);
+        thread = new Thread() {
+            @Override
+            public void run() {
+                server.start();
+            }
+        };
+        thread.start();
+
+        try {
+            while (!server.isStarted()) {
+                Thread.sleep(500);
+            }
+        } catch (InterruptedException e) {
+
+        }
+    }
+
+    private static void stopAerospikeServer() {
+        thread.interrupt();
+    }
+
     @BeforeClass
     public static void beforeClass() {
-        host = "localhost";
-        port = 3000;
-        namespace = "test";
-        set = "test";
+        String host = "localhost";
+        int port = 3000;
+        String namespace = "test";
+        String set = "test";
 
-        //                host = "recoome.cns.widerlab.io";
-        //                port = 3000;
-        //                namespace = "viewer";
-        //                set = "COOKIE";
+        runAerospikeServer(host, port, namespace);
 
         client = new AerospikeClient(host, port);
         key = new Key(namespace, set, "test");
@@ -56,6 +71,8 @@ public class CommandTest {
     @AfterClass
     public static void afterClass() {
         client.close();
+
+        stopAerospikeServer();
     }
 
     @Test
